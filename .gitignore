@@ -1,2 +1,4 @@
 
 *.pyc
+vemv/
+__pycache__/

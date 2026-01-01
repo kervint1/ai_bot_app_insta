@@ -36,6 +36,7 @@ openai = OpenAI(api_key=os.environ.get('OPENAI_TOKEN', ''))       # OpenAI API c
 OPENAI_MODEL = 'gpt-4o-mini'                                     # OpenAI model to use
 THREADS_API_TOKEN = os.environ.get('THREADS_API_TOKEN', '')      # Threads API token
 THREADS_USER_ID = os.environ.get('THREADS_USER_ID', '')          # Threads user ID
+CLOUD_STORAGE_BUCKET_NAME = os.environ.get('CLOUD_STORAGE_BUCKET_NAME', '')  # Google Cloud Storage bucket name
 
 # --- Prompt Tuning Configuration ---
 # Environment variables for fine-tuning prompt generation
@@ -305,7 +306,7 @@ def stability_post_insta():
 
     # Uploads a file to the Google Cloud Storage bucket
     print("Uploading image to Google Cloud Storage...")
-    image_url = upload_to_bucket(current_time_string, image_path, "ai-bot-app-insta")
+    image_url = upload_to_bucket(current_time_string, image_path, CLOUD_STORAGE_BUCKET_NAME)
     print(f"Image uploaded to GCS: {image_url}")
 
     # Generate caption using vision model
@@ -317,8 +318,8 @@ def stability_post_insta():
 
     print("Posting to Instagram...")
     exec_instagram_post(image_url, caption)
-    print("Posting to Threads...")
-    exec_threads_post(image_url, caption)
+    # print("Posting to Threads...")
+    # exec_threads_post(image_url, caption)
 
     print("Removing temporary image file...")
     remove_img_file(image_path)
@@ -386,7 +387,7 @@ def openai_post_insta():
 
     # Uploads a file to the Google Cloud Storage bucket
     print("Uploading image to Google Cloud Storage...")
-    image_url = upload_to_bucket(current_time_string, image_path, "ai-bot-app-insta")
+    image_url = upload_to_bucket(current_time_string, image_path, CLOUD_STORAGE_BUCKET_NAME)
     print(f"Image uploaded to GCS: {image_url}")
 
     # Generate caption using vision model
@@ -398,8 +399,8 @@ def openai_post_insta():
     
     print("Posting to Instagram...")
     exec_instagram_post(image_url, caption)
-    print("Posting to Threads...")
-    exec_threads_post(image_url, caption)
+    # print("Posting to Threads...")
+    # exec_threads_post(image_url, caption)
 
     print("Removing temporary image file...")
     remove_img_file(image_path)
@@ -455,7 +456,7 @@ def imagen_post_insta():
 
     # Upload image to Google Cloud Storage
     print("Uploading image to Google Cloud Storage...")
-    image_url = upload_to_bucket(current_time_string, image_path, "ai-bot-app-insta")
+    image_url = upload_to_bucket(current_time_string, image_path, CLOUD_STORAGE_BUCKET_NAME)
     print(f"Image uploaded to GCS: {image_url}")
 
     # Generate caption using vision model
@@ -468,8 +469,8 @@ def imagen_post_insta():
     # Post to Instagram and Threads
     print("Posting to Instagram...")
     exec_instagram_post(image_url, caption)
-    print("Posting to Threads...")
-    exec_threads_post(image_url, caption)
+    # print("Posting to Threads...")
+    # exec_threads_post(image_url, caption)
 
     # Clean up temporary image file
     print("Removing temporary image file...")
@@ -577,10 +578,8 @@ def upload_to_bucket(blob_name, file_path, bucket_name):
     blob = bucket.blob(blob_name)
     blob.upload_from_filename(file_path)
 
-    # Make the blob publicly viewable
-    blob.make_public()
-
     # Return the public URL of the uploaded file
+    # Note: Bucket is already configured with public access via allUsers
     return blob.public_url
 
 def exec_openai_vision(image_url, my_prompt):

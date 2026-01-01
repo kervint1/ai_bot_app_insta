@@ -12,7 +12,10 @@ services:
     image: slack-utils-app:python
     ports:
       - '9090:8080'
+    env_file:
+      - .env
     environment:
       PORT: 8080
+      GOOGLE_APPLICATION_CREDENTIALS: /app/google_credentials.json
     volumes:
       - ./:/app
