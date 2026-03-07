@@ -34,6 +34,8 @@ app = Flask(__name__)
 PAGE_ACCESS_TOKEN = os.environ.get('INSTA_PAGE_ACCESS_TOKEN', '')  # Instagram page access token
 VERIFY_TOKEN = os.environ.get('INSTA_PAGE_VERIFY_TOKEN', '')      # Webhook verification token
 BUSINESS_ACCOUNT_ID = os.environ.get('INSTA_BUSINESS_ACCOUNT_ID', '')  # Instagram business account ID
+FACEBOOK_PAGE_ACCESS_TOKEN = os.environ.get('FACEBOOK_PAGE_ACCESS_TOKEN', '')  # Facebook page access token
+FACEBOOK_PAGE_ID = os.environ.get('FACEBOOK_PAGE_ID', '')        # Facebook page ID
 STABILITY_KEY = os.environ.get('STABILITY_KEY', '')              # Stability AI API key
 openai = OpenAI(api_key=os.environ.get('OPENAI_TOKEN', ''))       # OpenAI API client
 OPENAI_MODEL = 'gpt-4o-mini'                                     # OpenAI model to use
@@ -538,13 +540,24 @@ def news_satire_post_insta():
         )
         print(f"Image uploaded to GCS: {image_url}")
 
-        # Post to Instagram (skip if TEST_MODE is enabled)
+        # Post to Instagram and Facebook (skip if TEST_MODE is enabled)
         if not test_mode:
             print("Posting to Instagram (Feed + Story)...")
             exec_instagram_post(image_url, result['caption'])
             print("Instagram post complete.")
+
+            # Post to Facebook Page (only if token is configured)
+            if FACEBOOK_PAGE_ACCESS_TOKEN and FACEBOOK_PAGE_ID:
+                try:
+                    print("Posting to Facebook Page...")
+                    exec_facebook_post(image_url, result['caption'])
+                    print("Facebook post complete.")
+                except Exception as e:
+                    print(f"Facebook post failed (skipping): {e}")
+            else:
+                print("[SKIP] Facebook credentials not configured")
         else:
-            print("[TEST_MODE] Skipping Instagram post")
+            print("[TEST_MODE] Skipping Instagram and Facebook posts")
 
         # Clean up temporary image file
         print("Removing temporary image file...")
@@ -794,7 +807,7 @@ def wait_for_media_ready(media_id, access_token, timeout=120, poll_interval=2):
     print(f"Waiting for media container {media_id} to be ready...")
     start_time = time.time()
     while time.time() - start_time < timeout:
-        status_url = f"https://graph.instagram.com/v22.0/{media_id}?fields=status_code&access_token={access_token}"
+        status_url = f"https://graph.facebook.com/v22.0/{media_id}?fields=status_code&access_token={access_token}"
         print("--- REQUEST ---")
         print(f"  Method: GET")
         print(f"  URL: {status_url}")
@@ -861,7 +874,7 @@ def exec_instagram_post(image_url, caption):
     """
     print("Executing Instagram post...")
     # Upload the image to Facebook
-    url = f"https://graph.instagram.com/v22.0/{BUSINESS_ACCOUNT_ID}/media"
+    url = f"https://graph.facebook.com/v22.0/{BUSINESS_ACCOUNT_ID}/media"
     params = {'access_token': PAGE_ACCESS_TOKEN, 'image_url':image_url, 'caption':caption}
     print("--- REQUEST ---")
     print(f"  Method: POST")
@@ -882,7 +895,7 @@ def exec_instagram_post(image_url, caption):
 
     # Publish the photo to Instagram
     print(f"Publishing post with creation ID: {media_id}")
-    url = f"https://graph.instagram.com/v22.0/{BUSINESS_ACCOUNT_ID}/media_publish"
+    url = f"https://graph.facebook.com/v22.0/{BUSINESS_ACCOUNT_ID}/media_publish"
     params = {'access_token': PAGE_ACCESS_TOKEN, 'creation_id': media_id}
     print("--- REQUEST ---")
     print(f"  Method: POST")
@@ -898,7 +911,7 @@ def exec_instagram_post(image_url, caption):
 
     # Upload the image to Facebook as story
     print("Uploading image for story...")
-    url = f"https://graph.instagram.com/v22.0/{BUSINESS_ACCOUNT_ID}/media"
+    url = f"https://graph.facebook.com/v22.0/{BUSINESS_ACCOUNT_ID}/media"
     params = {'access_token': PAGE_ACCESS_TOKEN, 'image_url':image_url, 'media_type':'STORIES'}
     print("--- REQUEST ---")
     print(f"  Method: POST")
@@ -919,7 +932,7 @@ def exec_instagram_post(image_url, caption):
 
     # Publish the photo to Instagram as story
     print(f"Publishing story with creation ID: {media_id}")
-    url = f"https://graph.instagram.com/v22.0/{BUSINESS_ACCOUNT_ID}/media_publish"
+    url = f"https://graph.facebook.com/v22.0/{BUSINESS_ACCOUNT_ID}/media_publish"
     params = {'access_token': PAGE_ACCESS_TOKEN, 'creation_id': media_id}
     print("--- REQUEST ---")
     print(f"  Method: POST")
@@ -934,6 +947,45 @@ def exec_instagram_post(image_url, caption):
         raise Exception(f"Failed to publish photo: {response.text}")
     
     print('instagram Image uploaded and published successfully!')
+
+def exec_facebook_post(image_url, caption):
+    """
+    Post an image and caption to a Facebook Page.
+
+    Args:
+        image_url: Public URL of the image (e.g., GCS URL)
+        caption: Text caption for the post
+    """
+    print("Executing Facebook Page post...")
+
+    # Facebook Graph API endpoint for posting photos to a page
+    url = f"https://graph.facebook.com/v22.0/{FACEBOOK_PAGE_ID}/photos"
+
+    params = {
+        'access_token': FACEBOOK_PAGE_ACCESS_TOKEN,
+        'url': image_url,
+        'message': caption
+    }
+
+    print("--- REQUEST ---")
+    print(f"  Method: POST")
+    print(f"  URL: {url}")
+    print(f"  Params: {{url: {image_url}, message: {caption[:50]}...}}")
+
+    response = requests.post(url, params=params)
+
+    print("--- RESPONSE ---")
+    print(f"  Status Code: {response.status_code}")
+    print(f"  Text: {response.text}")
+
+    if response.status_code != 200:
+        print(f"Failed to post to Facebook Page: {response.text}")
+        raise Exception(f"Failed to post to Facebook Page: {response.text}")
+
+    post_id = response.json().get('id', '')
+    print(f"Successfully posted to Facebook Page. Post ID: {post_id}")
+
+    return post_id
 
 def exec_threads_post(image_url, text = ''):
     """
