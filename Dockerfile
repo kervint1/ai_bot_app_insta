@@ -27,6 +27,11 @@ ENV APP_HOME /app
 WORKDIR $APP_HOME
 COPY . ./
 
+# Install system dependencies
+RUN apt-get update --fix-missing && \
+    apt-get install -y --no-install-recommends ffmpeg && \
+    rm -rf /var/lib/apt/lists/*
+
 # Install production dependencies.
 RUN pip install --no-cache-dir -r requirements.txt
 RUN pip install requests
@@ -34,6 +39,7 @@ RUN pip install openai
 RUN pip install google-cloud-storage
 RUN pip install stability-sdk
 RUN pip install google-genai pillow
+RUN pip install replicate
 
 # Run the web service on container startup. Here we use the gunicorn
 # webserver, with one worker process and 8 threads.
