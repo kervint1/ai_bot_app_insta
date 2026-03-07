@@ -8,8 +8,11 @@ from io import BytesIO  # For in-memory image operations
 
 # --- Third-Party Imports ---
 import requests  # type: ignore # For HTTP requests to APIs
-from flask import Flask  # type: ignore # For web server and API endpoints
+from flask import Flask, request  # type: ignore # For web server and API endpoints
 from PIL import Image  # type: ignore # For image processing
+
+# News Satire Bot
+import news_satire
 
 # Stability AI SDK (for image generation)
 import stability_sdk.interfaces.gooseai.generation.generation_pb2 as generation  # type: ignore # For artifact types
@@ -258,226 +261,316 @@ def generate_character_prompt(cartoon, art_style):
 
 # --- Flask Endpoints ---
 
-@app.route('/stability_post_insta', methods=['GET'])
-def stability_post_insta():
+# --- LEGACY ENDPOINTS (Commented out 2026-01-03) ---
+# Replaced by /news_satire_post_insta
+#
+# @app.route('/stability_post_insta', methods=['GET'])
+# def stability_post_insta():
+#     """
+#     Generate an image using Stability AI based on a random cartoon and art pattern,
+#     upload it to Google Cloud Storage, generate a caption using Gemini vision model,
+#     and post to Instagram and Threads.
+#     """
+#     print("--- Starting Stability AI Post to Instagram ---")
+#     # Pick a random cartoon and art pattern for the image generation
+#     picked_cartoon = random.choice(cartoons)
+#     picked_pattern = random.choice(pattern)
+#     print(f"Picked cartoon: {picked_cartoon}, Picked pattern: {picked_pattern}")
+#
+#     # Generate enhanced prompt for Stability AI
+#     my_prompt, negative_prompt = generate_enhanced_prompt(picked_cartoon, picked_pattern, "stability")
+#     print(f"Enhanced prompt: {my_prompt}")
+#     print(f"Negative prompt: {negative_prompt}")
+#
+#     # generate image by stability
+#     print("Generating image with Stability AI...")
+#     stability_api = client.StabilityInference(
+#         key=STABILITY_KEY,
+#         verbose=True,
+#         engine="stable-diffusion-xl-1024-v1-0",)
+#     answers = stability_api.generate(
+#         prompt=[
+#             generation.Prompt(text=my_prompt, parameters=generation.PromptParameters(weight=1.0)),
+#             generation.Prompt(text=negative_prompt, parameters=generation.PromptParameters(weight=-1.0))
+#         ]
+#     )
+#     print("Image generation complete.")
+#
+#     current_time = int(time.time())
+#     current_time_string = str(current_time)
+#
+#     # save image as file
+#     image_path = f"/tmp/image_{BUSINESS_ACCOUNT_ID}_{current_time_string}.png"
+#     for resp in answers:
+#         for artifact in resp.artifacts:
+#             if artifact.finish_reason == generation.FILTER:
+#                 print("NSFW content detected by Stability AI.")
+#             if artifact.type == generation.ARTIFACT_IMAGE:
+#                 img = Image.open(io.BytesIO(artifact.binary))
+#                 img.save(image_path)
+#                 print(f"Image saved to {image_path}")
+#
+#     # Uploads a file to the Google Cloud Storage bucket
+#     print("Uploading image to Google Cloud Storage...")
+#     image_url = upload_to_bucket(current_time_string, image_path, CLOUD_STORAGE_BUCKET_NAME)
+#     print(f"Image uploaded to GCS: {image_url}")
+#
+#     # Generate caption using vision model
+#     print("Generating caption with Gemini...")
+#     ai_response = gemini_chat_with_image(image_path, get_chat_with_image_template(my_prompt))
+#     print(f"Generated caption: {ai_response}")
+#
+#     caption = f"{ai_response} #api #stabilityai #stablediffusion #texttoimage"
+#
+#     print("Posting to Instagram...")
+#     exec_instagram_post(image_url, caption)
+#     # print("Posting to Threads...")
+#     # exec_threads_post(image_url, caption)
+#
+#     print("Removing temporary image file...")
+#     remove_img_file(image_path)
+#
+#     print("--- Finished Stability AI Post to Instagram ---")
+#     return "ok", 200
+#
+# @app.route('/openai_post_insta', methods=['GET'])
+# def openai_post_insta():
+#     """
+#     Generate a topic and place, use OpenAI to create a short description,
+#     generate an image with DALL-E, upload to Google Cloud Storage,
+#     generate a caption with Gemini, and post to Instagram and Threads.
+#     """
+#     print("--- Starting OpenAI Post to Instagram ---")
+#     # pick topic randomly
+#     picked_topic = random.choice(topic)
+#     picked_place = random.choice(place)
+#     print(f"Picked topic: {picked_topic}, Picked place: {picked_place}")
+#
+#     # make openai parameter
+#     input = []
+#     text = f'pick one {picked_topic} in {picked_place} countries then talk about it very shortly'
+#     new_message = {"role":"user", "content":text}
+#     input.append(new_message)
+#
+#     # generate text by openai
+#     print(f"Generating text with OpenAI: {input}")
+#     result = openai.chat.completions.create(model=OPENAI_MODEL, messages=input)
+#     ai_response = result.choices[0].message.content
+#     print(f"Generated text: {ai_response}")
+#
+#     # Generate enhanced prompt for DALL-E 3
+#     picked_pattern = random.choice(pattern)
+#     my_prompt, _ = generate_enhanced_prompt(ai_response, picked_pattern, "dalle")
+#     print(f"Enhanced DALL-E prompt: {my_prompt}")
+#
+#     # generate image by openai
+#     print("Generating image with DALL-E...")
+#     response = openai.images.generate(
+#         model="dall-e-3",
+#         prompt=my_prompt,
+#         n=1,
+#         size="1024x1024",
+#     )
+#     print(f"DALL-E response: {response}")
+#
+#     url = response.data[0].url
+#
+#     print("--- REQUEST ---")
+#     print(f"  Method: GET")
+#     print(f"  URL: {url}")
+#     response = requests.get(url)
+#     print("--- RESPONSE ---")
+#     print(f"  Status Code: {response.status_code}")
+#
+#     current_time = int(time.time())
+#     current_time_string = str(current_time)
+#
+#     # save image as file
+#     image_path = f"/tmp/image_{BUSINESS_ACCOUNT_ID}_{current_time_string}.png"
+#     with open(image_path, 'wb') as file:
+#         file.write(response.content)
+#     print(f"Image saved to {image_path}")
+#
+#     # Uploads a file to the Google Cloud Storage bucket
+#     print("Uploading image to Google Cloud Storage...")
+#     image_url = upload_to_bucket(current_time_string, image_path, CLOUD_STORAGE_BUCKET_NAME)
+#     print(f"Image uploaded to GCS: {image_url}")
+#
+#     # Generate caption using vision model
+#     print("Generating caption with Gemini...")
+#     ai_response = gemini_chat_with_image(image_path, get_chat_with_image_template(my_prompt))
+#     print(f"Generated caption: {ai_response}")
+#
+#     caption = f"{ai_response} #chatgpt #openai #api #dalle3 #texttoimage"
+#
+#     print("Posting to Instagram...")
+#     exec_instagram_post(image_url, caption)
+#     # print("Posting to Threads...")
+#     # exec_threads_post(image_url, caption)
+#
+#     print("Removing temporary image file...")
+#     remove_img_file(image_path)
+#
+#     print("--- Finished OpenAI Post to Instagram ---")
+#     return "ok", 200
+#
+# @app.route('/imagen_post_insta', methods=['GET'])
+# def imagen_post_insta():
+#     """
+#     Generate an image using Google Imagen, upload to Google Cloud Storage,
+#     generate a caption with Gemini, and post to Instagram and Threads.
+#     """
+#     print("--- Starting Imagen Post to Instagram ---")
+#     # pick cartoon and pattern
+#     picked_cartoon = random.choice(cartoons)
+#     picked_pattern = random.choice(pattern)
+#     print(f"Picked cartoon: {picked_cartoon}, Picked pattern: {picked_pattern}")
+#
+#     # Generate enhanced prompt for Imagen
+#     my_prompt, _ = generate_enhanced_prompt(picked_cartoon, picked_pattern, "imagen")
+#     print(f"Enhanced Imagen prompt: {my_prompt}")
+#
+#     # Generate image using Imagen (Google)
+#     print("Generating image with Imagen...")
+#     client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
+#     result = client.models.generate_images(
+#         model="models/imagen-4.0-generate-001",
+#         prompt=my_prompt,
+#         config=dict(
+#             number_of_images=1,
+#             output_mime_type="image/jpeg",
+#             person_generation="ALLOW_ADULT",
+#             aspect_ratio="1:1",
+#         ),
+#     )
+#     print("Image generation complete.")
+#
+#     if not result.generated_images:
+#         print("No images generated by Imagen.")
+#         return "No image generated", 500
+#
+#     image_data = result.generated_images[0].image.image_bytes
+#     img = Image.open(BytesIO(image_data))
+#
+#     current_time = int(time.time())
+#     current_time_string = str(current_time)
+#
+#     # Save image as file
+#     image_path = f"/tmp/image_{BUSINESS_ACCOUNT_ID}_{current_time_string}.jpg"
+#     img.save(image_path)
+#     print(f"Image saved to {image_path}")
+#
+#     # Upload image to Google Cloud Storage
+#     print("Uploading image to Google Cloud Storage...")
+#     image_url = upload_to_bucket(current_time_string, image_path, CLOUD_STORAGE_BUCKET_NAME)
+#     print(f"Image uploaded to GCS: {image_url}")
+#
+#     # Generate caption using vision model
+#     print("Generating caption with Gemini...")
+#     ai_response = gemini_chat_with_image(image_path, get_chat_with_image_template(my_prompt))
+#     print(f"Generated caption: {ai_response}")
+#
+#     caption = f"{ai_response} #api #google #imagen #texttoimage"
+#
+#     # Post to Instagram and Threads
+#     print("Posting to Instagram...")
+#     exec_instagram_post(image_url, caption)
+#     # print("Posting to Threads...")
+#     # exec_threads_post(image_url, caption)
+#
+#     # Clean up temporary image file
+#     print("Removing temporary image file...")
+#     remove_img_file(image_path)
+#
+#     print("--- Finished Imagen Post to Instagram ---")
+#     return "ok", 200
+
+@app.route('/news_satire_post_insta', methods=['GET'])
+def news_satire_post_insta():
     """
-    Generate an image using Stability AI based on a random cartoon and art pattern,
-    upload it to Google Cloud Storage, generate a caption using Gemini vision model,
-    and post to Instagram and Threads.
+    Generate a news satire image using news_satire module,
+    upload to Google Cloud Storage, and post to Instagram (Feed + Story).
+
+    Query Parameters:
+        category: News category (optional, random if not specified)
+
+    Example:
+        curl https://your-app.run.app/news_satire_post_insta
+        curl https://your-app.run.app/news_satire_post_insta?category=technology
     """
-    print("--- Starting Stability AI Post to Instagram ---")
-    # Pick a random cartoon and art pattern for the image generation
-    picked_cartoon = random.choice(cartoons)
-    picked_pattern = random.choice(pattern)
-    print(f"Picked cartoon: {picked_cartoon}, Picked pattern: {picked_pattern}")
+    print("--- Starting News Satire Post to Instagram ---")
 
-    # Generate enhanced prompt for Stability AI
-    my_prompt, negative_prompt = generate_enhanced_prompt(picked_cartoon, picked_pattern, "stability")
-    print(f"Enhanced prompt: {my_prompt}")
-    print(f"Negative prompt: {negative_prompt}")
+    # Get category parameter (optional)
+    category = request.args.get('category', None)
+    print(f"Category: {category if category else 'random (all genres, excluding politics)'}")
 
-    # generate image by stability
-    print("Generating image with Stability AI...")
-    stability_api = client.StabilityInference(
-        key=STABILITY_KEY, 
-        verbose=True,
-        engine="stable-diffusion-xl-1024-v1-0",)
-    answers = stability_api.generate(
-        prompt=[
-            generation.Prompt(text=my_prompt, parameters=generation.PromptParameters(weight=1.0)),
-            generation.Prompt(text=negative_prompt, parameters=generation.PromptParameters(weight=-1.0))
-        ]
-    )
-    print("Image generation complete.")
+    # Check TEST_MODE environment variable
+    test_mode = os.environ.get('TEST_MODE', 'true').lower() == 'true'
+    print(f"TEST_MODE: {test_mode}")
 
-    current_time = int(time.time())
-    current_time_string = str(current_time)
+    try:
+        # Initialize GenAI client for Imagen
+        genai_client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
 
-    # save image as file
-    image_path = f"/tmp/image_{BUSINESS_ACCOUNT_ID}_{current_time_string}.png"
-    for resp in answers:
-        for artifact in resp.artifacts:
-            if artifact.finish_reason == generation.FILTER:
-                print("NSFW content detected by Stability AI.")
-            if artifact.type == generation.ARTIFACT_IMAGE:
-                img = Image.open(io.BytesIO(artifact.binary))
-                img.save(image_path)
-                print(f"Image saved to {image_path}")
+        # Generate satire image with news_satire module
+        print("Generating satire image with news_satire module...")
+        result = news_satire.generate_satire_image(
+            category=category,
+            openai_client=openai,
+            gemini_chat_func=gemini_chat_with_image,
+            genai_client=genai_client,
+            save_to_tmp=False  # Use production path (/tmp/satire_*.jpg)
+        )
 
-    # Uploads a file to the Google Cloud Storage bucket
-    print("Uploading image to Google Cloud Storage...")
-    image_url = upload_to_bucket(current_time_string, image_path, CLOUD_STORAGE_BUCKET_NAME)
-    print(f"Image uploaded to GCS: {image_url}")
+        print(f"Image generated: {result['image_path']}")
+        print(f"News: {result['news']['title']}")
+        print(f"Caption: {result['caption'][:100]}...")
 
-    # Generate caption using vision model
-    print("Generating caption with Gemini...")
-    ai_response = gemini_chat_with_image(image_path, get_chat_with_image_template(my_prompt))
-    print(f"Generated caption: {ai_response}")
+        # Upload image to Google Cloud Storage
+        current_time = int(time.time())
+        current_time_string = str(current_time)
 
-    caption = f"{ai_response} #api #stabilityai #stablediffusion #texttoimage"
+        print("Uploading image to Google Cloud Storage...")
+        image_url = upload_to_bucket(
+            current_time_string,
+            result['image_path'],
+            CLOUD_STORAGE_BUCKET_NAME
+        )
+        print(f"Image uploaded to GCS: {image_url}")
 
-    print("Posting to Instagram...")
-    exec_instagram_post(image_url, caption)
-    # print("Posting to Threads...")
-    # exec_threads_post(image_url, caption)
+        # Post to Instagram (skip if TEST_MODE is enabled)
+        if not test_mode:
+            print("Posting to Instagram (Feed + Story)...")
+            exec_instagram_post(image_url, result['caption'])
+            print("Instagram post complete.")
+        else:
+            print("[TEST_MODE] Skipping Instagram post")
 
-    print("Removing temporary image file...")
-    remove_img_file(image_path)
+        # Clean up temporary image file
+        print("Removing temporary image file...")
+        remove_img_file(result['image_path'])
 
-    print("--- Finished Stability AI Post to Instagram ---")
-    return "ok", 200
+        print("--- Finished News Satire Post to Instagram ---")
 
-@app.route('/openai_post_insta', methods=['GET'])
-def openai_post_insta():
-    """
-    Generate a topic and place, use OpenAI to create a short description,
-    generate an image with DALL-E, upload to Google Cloud Storage,
-    generate a caption with Gemini, and post to Instagram and Threads.
-    """
-    print("--- Starting OpenAI Post to Instagram ---")
-    # pick topic randomly
-    picked_topic = random.choice(topic)
-    picked_place = random.choice(place)
-    print(f"Picked topic: {picked_topic}, Picked place: {picked_place}")
+        return {
+            "status": "success",
+            "test_mode": test_mode,
+            "news_title": result['news']['title'],
+            "news_url": result['news']['url'],
+            "news_category": result['news']['category'],
+            "satire_concept": result['satire_concept'],
+            "caption": result['caption'],
+            "image_url": image_url if not test_mode else None
+        }, 200
 
-    # make openai parameter
-    input = []
-    text = f'pick one {picked_topic} in {picked_place} countries then talk about it very shortly'
-    new_message = {"role":"user", "content":text}
-    input.append(new_message)
-
-    # generate text by openai
-    print(f"Generating text with OpenAI: {input}")
-    result = openai.chat.completions.create(model=OPENAI_MODEL, messages=input)
-    ai_response = result.choices[0].message.content
-    print(f"Generated text: {ai_response}")
-    
-    # Generate enhanced prompt for DALL-E 3
-    picked_pattern = random.choice(pattern)
-    my_prompt, _ = generate_enhanced_prompt(ai_response, picked_pattern, "dalle")
-    print(f"Enhanced DALL-E prompt: {my_prompt}")
-
-    # generate image by openai
-    print("Generating image with DALL-E...")
-    response = openai.images.generate(
-        model="dall-e-3",
-        prompt=my_prompt,
-        n=1,
-        size="1024x1024",
-    )
-    print(f"DALL-E response: {response}")
-
-    url = response.data[0].url
-
-    print("--- REQUEST ---")
-    print(f"  Method: GET")
-    print(f"  URL: {url}")
-    response = requests.get(url)
-    print("--- RESPONSE ---")
-    print(f"  Status Code: {response.status_code}")
-
-    current_time = int(time.time())
-    current_time_string = str(current_time)
-
-    # save image as file
-    image_path = f"/tmp/image_{BUSINESS_ACCOUNT_ID}_{current_time_string}.png"
-    with open(image_path, 'wb') as file:
-        file.write(response.content)
-    print(f"Image saved to {image_path}")
-
-    # Uploads a file to the Google Cloud Storage bucket
-    print("Uploading image to Google Cloud Storage...")
-    image_url = upload_to_bucket(current_time_string, image_path, CLOUD_STORAGE_BUCKET_NAME)
-    print(f"Image uploaded to GCS: {image_url}")
-
-    # Generate caption using vision model
-    print("Generating caption with Gemini...")
-    ai_response = gemini_chat_with_image(image_path, get_chat_with_image_template(my_prompt))
-    print(f"Generated caption: {ai_response}")
-
-    caption = f"{ai_response} #chatgpt #openai #api #dalle3 #texttoimage"
-    
-    print("Posting to Instagram...")
-    exec_instagram_post(image_url, caption)
-    # print("Posting to Threads...")
-    # exec_threads_post(image_url, caption)
-
-    print("Removing temporary image file...")
-    remove_img_file(image_path)
-
-    print("--- Finished OpenAI Post to Instagram ---")
-    return "ok", 200
-
-@app.route('/imagen_post_insta', methods=['GET'])
-def imagen_post_insta():
-    """
-    Generate an image using Google Imagen, upload to Google Cloud Storage,
-    generate a caption with Gemini, and post to Instagram and Threads.
-    """
-    print("--- Starting Imagen Post to Instagram ---")
-    # pick cartoon and pattern
-    picked_cartoon = random.choice(cartoons)
-    picked_pattern = random.choice(pattern)
-    print(f"Picked cartoon: {picked_cartoon}, Picked pattern: {picked_pattern}")
-
-    # Generate enhanced prompt for Imagen
-    my_prompt, _ = generate_enhanced_prompt(picked_cartoon, picked_pattern, "imagen")
-    print(f"Enhanced Imagen prompt: {my_prompt}")
-
-    # Generate image using Imagen (Google)
-    print("Generating image with Imagen...")
-    client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
-    result = client.models.generate_images(
-        model="models/imagen-4.0-generate-001",
-        prompt=my_prompt,
-        config=dict(
-            number_of_images=1,
-            output_mime_type="image/jpeg",
-            person_generation="ALLOW_ADULT",
-            aspect_ratio="1:1",
-        ),
-    )
-    print("Image generation complete.")
-
-    if not result.generated_images:
-        print("No images generated by Imagen.")
-        return "No image generated", 500
-
-    image_data = result.generated_images[0].image.image_bytes
-    img = Image.open(BytesIO(image_data))
-
-    current_time = int(time.time())
-    current_time_string = str(current_time)
-
-    # Save image as file
-    image_path = f"/tmp/image_{BUSINESS_ACCOUNT_ID}_{current_time_string}.jpg"
-    img.save(image_path)
-    print(f"Image saved to {image_path}")
-
-    # Upload image to Google Cloud Storage
-    print("Uploading image to Google Cloud Storage...")
-    image_url = upload_to_bucket(current_time_string, image_path, CLOUD_STORAGE_BUCKET_NAME)
-    print(f"Image uploaded to GCS: {image_url}")
-
-    # Generate caption using vision model
-    print("Generating caption with Gemini...")
-    ai_response = gemini_chat_with_image(image_path, get_chat_with_image_template(my_prompt))
-    print(f"Generated caption: {ai_response}")
-
-    caption = f"{ai_response} #api #google #imagen #texttoimage"
-
-    # Post to Instagram and Threads
-    print("Posting to Instagram...")
-    exec_instagram_post(image_url, caption)
-    # print("Posting to Threads...")
-    # exec_threads_post(image_url, caption)
-
-    # Clean up temporary image file
-    print("Removing temporary image file...")
-    remove_img_file(image_path)
-
-    print("--- Finished Imagen Post to Instagram ---")
-    return "ok", 200
+    except Exception as e:
+        print(f"Error in news_satire_post_insta: {e}")
+        import traceback
+        traceback.print_exc()
+        return {
+            "status": "error",
+            "error": str(e)
+        }, 500
 
 @app.route('/test_prompt_strategies', methods=['GET'])
 def test_prompt_strategies():
@@ -541,6 +634,51 @@ def test_prompt_strategies():
     
     print("--- Finished Testing Prompt Strategies ---")
     return {"strategies": strategies, "results": results}, 200
+
+@app.route('/test_news_satire', methods=['GET'])
+def test_news_satire():
+    """
+    ローカルテスト用: 風刺画生成のみ（Instagram投稿なし）
+
+    Query Parameters:
+        category: ニュースカテゴリ（省略時はランダム）
+
+    Example:
+        curl http://localhost:5000/test_news_satire
+        curl http://localhost:5000/test_news_satire?category=technology
+    """
+    print("--- Starting News Satire Test ---")
+
+    category = request.args.get('category', None)
+
+    try:
+        # Initialize GenAI client for Imagen
+        genai_client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
+
+        result = news_satire.generate_satire_image(
+            category=category,
+            openai_client=openai,
+            gemini_chat_func=gemini_chat_with_image,
+            genai_client=genai_client,
+            save_to_tmp=True
+        )
+
+        print("--- Test Complete ---")
+
+        return {
+            "status": "success",
+            "test_mode": True,
+            **result
+        }, 200
+
+    except Exception as e:
+        print(f"Error in test_news_satire: {e}")
+        import traceback
+        traceback.print_exc()
+        return {
+            "status": "error",
+            "error": str(e)
+        }, 500
 
 @app.route('/prompt_performance', methods=['GET'])
 def get_prompt_performance():

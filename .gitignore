@@ -1,4 +1,8 @@
-
 *.pyc
-vemv/
+venv/
 __pycache__/
+.env
+google_credentials.json
+
+# News Satire Test Images
+satire_test_images/
