@@ -733,6 +733,21 @@ def create_luma_action_video(frame0_url, frame1_url, luma_prompt, segment_name, 
             print(f"[luma] Video saved: {output_path}")
             return output_path
         elif state in ('failed', 'error'):
+            # frame1 指定時の失敗は frame0 のみで再試行
+            if frame1_url and payload['keyframes'].get('frame1'):
+                print(f"[luma] frame0+frame1 failed. Retrying with frame0 only...")
+                payload['keyframes'].pop('frame1')
+                retry_resp = requests.post(
+                    'https://api.lumalabs.ai/dream-machine/v1/generations',
+                    headers={'Authorization': f'Bearer {LUMA_API_KEY}', 'Content-Type': 'application/json'},
+                    json=payload, timeout=60
+                )
+                if retry_resp.status_code not in (200, 201):
+                    raise Exception(f"Luma retry failed: {retry_resp.text}")
+                generation_id = retry_resp.json()['id']
+                print(f"[luma] Retry Generation ID: {generation_id}. Polling...")
+                start = time.time()
+                continue
             raise Exception(f"Luma generation failed: {data}")
 
     raise Exception("Luma generation timed out after 300 seconds")
