@@ -24,3 +24,8 @@ jobs:
           region: asia-northeast1
           source: .
           project_id: etherealpage
+          flags: >-
+            --memory=4Gi
+            --cpu=2
+            --timeout=1800
+            --concurrency=1
