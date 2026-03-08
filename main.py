@@ -225,14 +225,16 @@ def historical_reel_post_insta():
     print("--- Starting Historical Reel Post to Instagram ---")
 
     test_mode = os.environ.get('TEST_MODE', 'true').lower() == 'true'
-    print(f"TEST_MODE: {test_mode}")
+    photo_only = request.args.get('photo_only', 'false').lower() == 'true'
+    print(f"TEST_MODE: {test_mode}, PHOTO_ONLY: {photo_only}")
 
     try:
         print("Generating historical reel...")
         result = historical_reel.generate_historical_reel(
             openai_client=openai,
             upload_func=upload_to_bucket,
-            bucket_name=CLOUD_STORAGE_BUCKET_NAME
+            bucket_name=CLOUD_STORAGE_BUCKET_NAME,
+            photo_only=photo_only
         )
 
         figure = result['figure']
@@ -242,6 +244,30 @@ def historical_reel_post_insta():
 
         print(f"Reel generated for: {figure['name_jp']} ({figure['era']})")
         print(f"Caption: {caption[:100]}...")
+
+        # photo_only モード: 写真をローカル保存してリターン
+        if photo_only:
+            import shutil
+            save_dir = '/app/satire_test_images'
+            os.makedirs(save_dir, exist_ok=True)
+            ts_save = int(time.time())
+            saved = {}
+            for key, path in result.get('action_photo_paths', {}).items():
+                if os.path.exists(path):
+                    dst = f"{save_dir}/reel_action_{key}_{ts_save}.jpg"
+                    shutil.copy2(path, dst)
+                    saved[key] = dst
+                    print(f"[PHOTO_ONLY] Saved: {dst}")
+            for f in result['temp_files']:
+                if os.path.exists(f):
+                    os.remove(f)
+            return {
+                "status": "success",
+                "photo_only": True,
+                "figure": figure['name_jp'],
+                "action_photo_urls": result.get('action_photo_urls', {}),
+                "saved_locally": saved
+            }, 200
 
         if not test_mode:
             current_time_string = str(int(time.time()))
@@ -263,9 +289,17 @@ def historical_reel_post_insta():
             import shutil
             save_dir = '/app/satire_test_images'
             os.makedirs(save_dir, exist_ok=True)
-            saved_video = f"{save_dir}/reel_test_{int(time.time())}.mp4"
+            ts_save = int(time.time())
+            saved_video = f"{save_dir}/reel_test_{ts_save}.mp4"
             shutil.copy2(video_path, saved_video)
             print(f"[TEST_MODE] Video saved for review: {saved_video}")
+            # アクション写真も保存
+            for key in ['action1', 'action2', 'action3']:
+                for f in result['temp_files']:
+                    if f'action_photo_{key}_' in f and f.endswith('.jpg'):
+                        dst = f"{save_dir}/reel_action_{key}_{ts_save}.jpg"
+                        shutil.copy2(f, dst)
+                        print(f"[TEST_MODE] Action photo saved: {dst}")
 
         # 一時ファイル削除
         for f in result['temp_files']:

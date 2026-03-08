@@ -183,24 +183,27 @@ def generate_reel_script(figure, openai_client):
 
 要件:
 - hook_speech: その人物が視聴者に語りかける日本語の台詞（3秒以内、インパクト重視）
+- scene_setting: 3枚全シーンで共通の「舞台設定」（場所・時間帯・照明・天候）を英語で記述
+  ★例: "on the shore of Ganryu Island, early morning mist, pale golden dawn light, rocky beach"
+  ★この設定を3枚全てで統一することで背景の一貫性を保つ
 - action1_scene: Gemini画像生成用の英語シーン描写（ストーリー冒頭）
   ★15秒の動画の「出発点」となる構図。人物が遠景〜中景で全身が映り、これから動き出す直前の静止
   ★カメラアングル・人物の向き・体の向きを明示すること
-  ★形式: "[人物名], [服装・体格], [具体的なポーズ・向き], [場所・時間帯], [カメラアングル], dramatic lighting"
-  ★例: "standing still facing left, full body, low angle shot, misty shore at dawn"
+  ★scene_setting の場所・照明を必ず含め、人物のポーズ・アクションのみ変化させること
+  ★形式: "[人物名], [服装・体格], [具体的なポーズ・向き], {scene_setting}, [カメラアングル], dramatic lighting"
 - action2_scene: 同上（ストーリー中盤・最も激しい動きの瞬間）
-  ★action1とは明らかに異なる場所・アングル・ポーズにすること（小さな動きは禁止）
+  ★場所・背景は action1 と同じ scene_setting を維持し、ポーズ・アクションのみ大きく変化させること
   ★体全体が大きく動いている瞬間（跳躍・斬撃・疾走・転倒など）を描写
-  ★形式: action1_scene と同じ構造で、全く別の構図・アングルにする
+  ★形式: action1_scene と同じ構造で、ポーズのみ全く変える
 - action3_scene: 同上（ストーリー終盤・結末の瞬間）
-  ★action1・action2とは異なる場所・アングル・ポーズ
+  ★場所・背景は action1/2 と同じ scene_setting を維持し、ポーズ・表情のみ変化させること
   ★物語の決着を示す構図（勝利・崩れ落ちる・遠ざかるなど）
-  ★形式: action1_scene と同じ構造で、全く別の構図・アングルにする
+  ★形式: action1_scene と同じ構造で、ポーズのみ全く変える
 
   【3シーン構成の制約】
   - 3枚は「コマ撮りアニメのキーフレーム」として機能すること
-  - action1→action2→action3 で人物の位置・向き・ポーズが大きく変化していること
-  - 同じポーズ・同じアングルの繰り返しは禁止
+  - action1→action2→action3 で人物のポーズが大きく変化していること
+  - 背景・照明・場所は scene_setting に従い3枚全て同一にすること（背景の不一致禁止）
   - 合計で約15秒の激しいアクションシーンを表現できる構成にすること
 
 - luma_prompt: Luma Dream Machine用の英語テキストプロンプト（写真間アニメーション共通）
@@ -211,6 +214,7 @@ def generate_reel_script(figure, openai_client):
 JSON形式のみで返してください:
 {{
   "hook_speech": "...",
+  "scene_setting": "...",
   "action1_scene": "...",
   "action2_scene": "...",
   "action3_scene": "...",
@@ -259,7 +263,7 @@ def generate_portrait_with_imagen(name_jp, name_en, figure_key, timestamp, ref_d
         f"この肖像画に描かれた人物（{name_jp}、{name_en}）を、"
         f"現代のプロカメラマンが撮影したかのようなフォトリアリスティックな実写写真に変換してください。"
         f"絵画・イラスト調は完全に排除し、本物の人間を高解像度カメラで撮影したリアルな写真として生成してください。"
-        f"顔の特徴・服装・姿勢はこの肖像画に忠実に再現してください。"
+        f"顔の特徴・服装・姿勢はこの肖像画に忠実に再現しつつ、顔立ちを整えて美しく（美男または美女として）仕上げてください。"
     )
 
     # --- Step 1: Gemini native image generation (image-in → image-out) ---
@@ -364,7 +368,7 @@ def _generate_portrait_with_flux_fallback(prompt, output_path):
     return output_path
 
 
-def generate_action_photo_with_gemini(ref_data, figure, scene_description, segment, timestamp):
+def generate_action_photo_with_gemini(ref_data, figure, scene_description, segment, timestamp, prev_photo_path=None, scene_setting=None):
     """
     Gemini でアクションシーン写真を生成する。
     肖像画の参照データを使い、フォトリアリスティックな実写写真を生成する。
@@ -375,6 +379,8 @@ def generate_action_photo_with_gemini(ref_data, figure, scene_description, segme
         scene_description: 英語のシーン描写テキスト
         segment: セグメント名（'action1', 'action2', 'action3'）
         timestamp: タイムスタンプ文字列
+        prev_photo_path: 直前のシーン写真パス（連続性確保用、None 可）
+        scene_setting: 3枚共通の舞台設定（場所・照明・天候）英語テキスト（None 可）
 
     Returns:
         str: /tmp/reel_action_photo_{segment}_{ts}.jpg
@@ -389,23 +395,59 @@ def generate_action_photo_with_gemini(ref_data, figure, scene_description, segme
 
     print(f"[action_photo] Generating {segment} with Gemini: {scene_description[:80]}...")
 
-    prompt_text = (
-        f"この写真の人物（{name_jp}、{name_en}）が以下のシーンにいる実写写真を生成してください。\n"
-        f"人物の顔立ち・服装・体型はこの写真に忠実に再現し、全身が映るようにしてください。\n"
-        f"フォトリアリスティックな実写写真として生成してください。\n\n"
-        f"シーン: {scene_description}"
-    )
+    # 共通背景の指示文
+    setting_instruction = ""
+    if scene_setting:
+        setting_instruction = (
+            f"\n【背景・舞台の固定指示】\n"
+            f"背景・場所・照明・天候は必ず以下の設定で統一してください（3枚全シーン共通）:\n"
+            f"{scene_setting}\n"
+        )
+
+    aspect_instruction = "縦長のスマートフォン画面用（9:16縦向き）で生成してください。人物の全身が縦構図に収まるようにしてください。\n"
+
+    # 前シーン写真がある場合は連続性を意識したプロンプト
+    if prev_photo_path:
+        prompt_text = (
+            f"1枚目は人物（{name_jp}、{name_en}）の参照写真です。2枚目は直前のシーン写真です。\n"
+            f"この人物が以下の次のシーンにいる実写写真を生成してください。\n"
+            f"人物の顔立ち・服装・体型は1枚目の参照写真に忠実に再現してください。\n"
+            f"背景・場所・照明は2枚目の直前シーンと完全に同一の場所・環境にしてください。\n"
+            f"{setting_instruction}"
+            f"{aspect_instruction}"
+            f"全身が映るフォトリアリスティックな実写写真として生成してください。\n\n"
+            f"シーン（人物のポーズ・アクションのみ変化）: {scene_description}"
+        )
+    else:
+        prompt_text = (
+            f"この写真の人物（{name_jp}、{name_en}）が以下のシーンにいる実写写真を生成してください。\n"
+            f"人物の顔立ち・服装・体型はこの写真に忠実に再現し、全身が映るようにしてください。\n"
+            f"{setting_instruction}"
+            f"{aspect_instruction}"
+            f"フォトリアリスティックな実写写真として生成してください。\n\n"
+            f"シーン: {scene_description}"
+        )
 
     client = gai.Client(api_key=gemini_api_key)
+
+    # 直前シーン写真データを読み込む
+    prev_data = None
+    if prev_photo_path:
+        try:
+            with open(prev_photo_path, 'rb') as f:
+                prev_data = f.read()
+        except Exception as e:
+            print(f"[action_photo] Could not read prev photo: {e}")
 
     # Gemini native image generation (image-in → image-out)
     if ref_data:
         for model_name in ["gemini-2.0-flash-exp-image-generation", "gemini-2.0-flash-preview-image-generation"]:
             try:
-                contents = [gtypes.Content(role="user", parts=[
-                    gtypes.Part.from_bytes(data=ref_data, mime_type="image/jpeg"),
-                    gtypes.Part.from_text(text=prompt_text)
-                ])]
+                parts = [gtypes.Part.from_bytes(data=ref_data, mime_type="image/jpeg")]
+                if prev_data:
+                    parts.append(gtypes.Part.from_bytes(data=prev_data, mime_type="image/jpeg"))
+                parts.append(gtypes.Part.from_text(text=prompt_text))
+                contents = [gtypes.Content(role="user", parts=parts)]
                 response = client.models.generate_content(
                     model=model_name,
                     contents=contents,
@@ -755,9 +797,10 @@ def create_luma_action_video(frame0_url, frame1_url, luma_prompt, segment_name, 
 
 # --- FFmpeg 結合 ---
 
-def concatenate_videos_with_ffmpeg(video_paths, output_path):
+def concatenate_videos_with_ffmpeg(video_paths, output_path, bgm_path=None):
     """
     FFmpeg で複数の動画を縦型（720x1280）に結合する。
+    bgm_path が指定された場合はBGMをミックスする（音量0.25、動画長でカット）。
 
     Returns:
         str: output_path
@@ -768,26 +811,56 @@ def concatenate_videos_with_ffmpeg(video_paths, output_path):
             f.write(f"file '{path}'\n")
 
     print(f"[ffmpeg] Concatenating {len(video_paths)} videos -> {output_path}")
+
+    # Step 1: 動画を結合
+    concat_path = output_path.replace('.mp4', '_concat.mp4') if bgm_path and os.path.exists(bgm_path) else output_path
     cmd = [
         'ffmpeg', '-y',
         '-f', 'concat', '-safe', '0', '-i', list_file,
         '-c:v', 'libx264', '-c:a', 'aac',
         '-vf', 'scale=720:1280:force_original_aspect_ratio=decrease,pad=720:1280:(ow-iw)/2:(oh-ih)/2,setsar=1',
         '-r', '30', '-b:v', '4M', '-movflags', '+faststart', '-pix_fmt', 'yuv420p',
-        output_path
+        concat_path
     ]
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
-        raise Exception(f"FFmpeg failed: {result.stderr}")
-
+        raise Exception(f"FFmpeg concat failed: {result.stderr}")
     os.remove(list_file)
+
+    # Step 2: BGMミックス（BGMが指定されている場合）
+    if bgm_path and os.path.exists(bgm_path):
+        print(f"[ffmpeg] Mixing BGM: {bgm_path}")
+        # 動画の長さを取得
+        probe = subprocess.run(
+            ['ffprobe', '-v', 'quiet', '-show_entries', 'format=duration', '-of', 'csv=p=0', concat_path],
+            capture_output=True, text=True
+        )
+        duration = float(probe.stdout.strip())
+        bgm_cmd = [
+            'ffmpeg', '-y',
+            '-i', concat_path,
+            '-stream_loop', '-1', '-i', bgm_path,
+            '-filter_complex',
+            f'[0:a]apad=whole_dur={duration}[speech];[1:a]volume=0.25,atrim=0:{duration}[bgm];[speech][bgm]amix=inputs=2:duration=first[aout]',
+            '-map', '0:v', '-map', '[aout]',
+            '-t', str(duration),
+            '-c:v', 'copy', '-c:a', 'aac',
+            '-movflags', '+faststart',
+            output_path
+        ]
+        bgm_result = subprocess.run(bgm_cmd, capture_output=True, text=True)
+        os.remove(concat_path)
+        if bgm_result.returncode != 0:
+            raise Exception(f"FFmpeg BGM mix failed: {bgm_result.stderr}")
+        print(f"[ffmpeg] BGM mixed successfully")
+
     print(f"[ffmpeg] Final video saved: {output_path}")
     return output_path
 
 
 # --- オーケストレーター ---
 
-def generate_historical_reel(openai_client, upload_func, bucket_name):
+def generate_historical_reel(openai_client, upload_func, bucket_name, photo_only=False):
     """
     歴史的人物リール動画を生成するオーケストレーター関数。
 
@@ -880,14 +953,19 @@ def generate_historical_reel(openai_client, upload_func, bucket_name):
     print("\n=== Step 6.5: Generate action photos with Gemini ===")
     with open(portrait_path, 'rb') as f:
         portrait_ref_data = f.read()
+    scene_setting = script.get('scene_setting')
+    print(f"[generate_script] Scene setting: {scene_setting}")
     action_photo1_path = generate_action_photo_with_gemini(
-        portrait_ref_data, figure, script['action1_scene'], 'action1', ts
+        portrait_ref_data, figure, script['action1_scene'], 'action1', ts,
+        scene_setting=scene_setting
     )
     action_photo2_path = generate_action_photo_with_gemini(
-        portrait_ref_data, figure, script['action2_scene'], 'action2', ts
+        portrait_ref_data, figure, script['action2_scene'], 'action2', ts,
+        prev_photo_path=action_photo1_path, scene_setting=scene_setting
     )
     action_photo3_path = generate_action_photo_with_gemini(
-        portrait_ref_data, figure, script['action3_scene'], 'action3', ts
+        portrait_ref_data, figure, script['action3_scene'], 'action3', ts,
+        prev_photo_path=action_photo2_path, scene_setting=scene_setting
     )
     temp_files.extend([action_photo1_path, action_photo2_path, action_photo3_path])
 
@@ -899,6 +977,28 @@ def generate_historical_reel(openai_client, upload_func, bucket_name):
     print(f"[gcs] Action photo 1: {action1_gcs_url}")
     print(f"[gcs] Action photo 2: {action2_gcs_url}")
     print(f"[gcs] Action photo 3: {action3_gcs_url}")
+
+    # photo_only モード: 写真生成まででストップ
+    if photo_only:
+        print("\n=== [PHOTO_ONLY] Stopping after action photo generation ===")
+        return {
+            'video_path': None,
+            'portrait_gcs_url': portrait_gcs_url,
+            'action_photo_urls': {
+                'action1': action1_gcs_url,
+                'action2': action2_gcs_url,
+                'action3': action3_gcs_url,
+            },
+            'action_photo_paths': {
+                'action1': action_photo1_path,
+                'action2': action_photo2_path,
+                'action3': action_photo3_path,
+            },
+            'figure': figure,
+            'script': script,
+            'caption': script['caption'],
+            'temp_files': temp_files
+        }
 
     # Step 7: Luma アクション動画 x2（photo1→photo2, photo2→photo3）
     print("\n=== Step 7: Create Luma action videos ===")
@@ -913,9 +1013,11 @@ def generate_historical_reel(openai_client, upload_func, bucket_name):
     # Step 8: FFmpeg で結合（hook → luma1 → luma2）
     print("\n=== Step 8: Concatenate with FFmpeg ===")
     final_path = f"/tmp/reel_final_{ts}.mp4"
+    bgm_path = "/app/BGM/BGM1.mp3"
     concatenate_videos_with_ffmpeg(
         [hook_video_path, luma1_path, luma2_path],
-        final_path
+        final_path,
+        bgm_path=bgm_path if os.path.exists(bgm_path) else None
     )
     temp_files.append(final_path)
 
